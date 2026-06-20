@@ -14,6 +14,46 @@ Code OSS builds (it uses only the stable extension API).
   `BIGMARK_FIGLET`, because the editor's environment often has a stripped
   `PATH`.
 
+## Flatpak VSCodium (figlet bridge)
+
+If you run VSCodium (or VS Code) as a **Flatpak**, the editor is sandboxed and
+**cannot see the host's `/usr`** — so even though `figlet` is installed on your
+system, the extension's child process can't reach `/usr/bin/figlet`, and bigmark
+fails with "required dependency 'figlet' was not found." The Flatpak only
+exposes your home directory (`filesystems=host` covers `/home`, not `/usr`).
+
+`figlet` links only against libc (which the Flatpak runtime has), so the clean
+fix is a **self-contained copy under your home directory** that the sandbox can
+run directly — no `flatpak-spawn`, no host round-trip:
+
+```sh
+# 1. copy the figlet binary + fonts somewhere the sandbox can see
+mkdir -p ~/.local/lib/figlet/fonts
+cp "$(readlink -f /usr/bin/figlet)" ~/.local/lib/figlet/figlet
+cp -r /usr/share/figlet/* ~/.local/lib/figlet/fonts/
+
+# 2. a one-line shim that supplies the font dir (figlet's compiled-in default
+#    path /usr/share/figlet doesn't exist in the sandbox)
+cat > ~/.local/bin/figlet-host <<'EOF'
+#!/bin/sh
+exec ~/.local/lib/figlet/figlet -d ~/.local/lib/figlet/fonts "$@"
+EOF
+chmod +x ~/.local/bin/figlet-host
+```
+
+Then point the extension at it in VSCodium settings:
+
+```jsonc
+"bigmark.figletPath": "/home/<you>/.local/bin/figlet-host"
+```
+
+Also set `bigmark.binaryPath` to the **absolute** path of the bigmark binary —
+a bare `bigmark` won't resolve in the sandbox's `PATH`.
+
+> The sandbox boundary forces *some* bridge here; this is the most self-contained
+> form. Trade-off: the copied figlet won't pick up a system `apt upgrade figlet`
+> (figlet is stable, so this rarely matters).
+
 ## Install
 
 From this directory, build it:
