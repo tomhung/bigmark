@@ -1,0 +1,33 @@
+# bigmark config — set your preferred defaults here.
+#
+# Copy to one of these locations (first found wins):
+#   $BIGMARK_CONFIG
+#   $XDG_CONFIG_HOME/bigmark/config
+#   ~/.config/bigmark/config
+#
+# Precedence: built-in defaults -> this file -> command-line flags.
+# A command-line flag always overrides the matching value here.
+#
+# Run `bigmark --config` to see which path is being read.
+
+# max line width (default 80)
+# width=100
+
+# comment prefix. QUOTE it to keep a trailing space: prefix="// "
+# (unquoted trailing spaces are trimmed by the file format)
+# prefix="// "
+
+# canvas fill character (default █ full block). A literal # is fine here:
+# brush=#
+
+# canvas comment syntax: js ts php css html python py ruby rb  (default js)
+# lang=php
+
+# figlet font (default: auto for tier 1, banner for canvas)
+# font=banner
+
+# canvas vertical stretch — repeat each row N times (default 2)
+# vstretch=1
+
+# canvas carve vs solid: true=carve (negative space, default), false=solid
+# carve=true

@@ -45,9 +45,12 @@ OPTIONS
   -f FONT     figlet font. Any font in tier 1; only bold fonts (banner, block)
               carve legibly in canvas mode (thin fonts come out as mush).
   --header    print a one-line definition of the convention and exit
+  --config    print the config file path being read (and whether it exists)
   -h          this help
 
-Requires: figlet on PATH.
+Config: set defaults in ~/.config/bigmark/config (key=value). Precedence is
+built-in defaults -> config file -> flags. See config.sample. Requires figlet
+on PATH.
 `)
 }
 

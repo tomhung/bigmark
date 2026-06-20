@@ -72,6 +72,30 @@ $ bigmark --canvas --rand "PARSE"
 (`/* */`), `html` (`<!-- -->`), `python`/`py` (`"""..."""`), `ruby`/`rb`
 (`=begin`/`=end`).
 
+## Config file
+
+Set your preferred defaults so you don't repeat flags. bigmark reads the first
+of these it finds:
+
+```
+$BIGMARK_CONFIG
+$XDG_CONFIG_HOME/bigmark/config
+~/.config/bigmark/config
+```
+
+Format is simple `key=value` (see [`config.sample`](config.sample)):
+
+```ini
+width=100
+prefix="// "      # quote to keep the trailing space
+brush=#
+lang=php
+vstretch=1
+```
+
+**Precedence: built-in defaults → config → command-line flags.** A flag always
+overrides config. Run `bigmark --config` to see which file is being read.
+
 ## Notes & limitations
 
 - Canvas art only reads in the minimap when VS Code's

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/GravisTechGregB/bigmark/internal/config"
 	"github.com/GravisTechGregB/bigmark/internal/render"
 )
 
@@ -37,6 +38,33 @@ func main() {
 	// track explicitly-set knobs so random modes don't override them
 	setBrush, setVStretch, setCarve, setCFont := false, false, false, false
 
+	// ---- config file: overrides built-in defaults, overridden by flags ----
+	// (precedence: built-in defaults -> config -> command-line flags)
+	if cfg, err := config.Load(); err == nil {
+		if cfg.Width != nil {
+			width = *cfg.Width
+		}
+		if cfg.Prefix != nil {
+			prefix = *cfg.Prefix
+		}
+		if cfg.Brush != nil {
+			brush = *cfg.Brush
+		}
+		if cfg.Lang != nil {
+			lang = *cfg.Lang
+		}
+		if cfg.Font != nil {
+			font = *cfg.Font
+			cfont = *cfg.Font
+		}
+		if cfg.VStretch != nil {
+			vstretch = *cfg.VStretch
+		}
+		if cfg.Carve != nil {
+			carve = *cfg.Carve
+		}
+	}
+
 	var pos []string
 	next := func(i *int) string {
 		*i++
@@ -55,6 +83,15 @@ func main() {
 		case a == "--header":
 			fmt.Println(prefix + "bigmark: full-width figlet banner comments used as minimap landmarks.")
 			fmt.Println(prefix + "         major sections get one; navigate by silhouette.")
+			return
+		case a == "--config":
+			// print the config path being read and whether it exists
+			p := config.Path()
+			if _, err := os.Stat(p); err == nil {
+				fmt.Printf("%s (exists)\n", p)
+			} else {
+				fmt.Printf("%s (not found)\n", p)
+			}
 			return
 		case a == "-1":
 			tier = 1
