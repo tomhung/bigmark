@@ -1,8 +1,12 @@
 # bigmark — VS Code / VSCodium extension
 
-Insert ASCII section-banner comments (minimap landmarks) into the active editor
-by shelling out to the `bigmark` CLI. Works in VS Code, VSCodium, and other
-Code OSS builds (it uses only the stable extension API).
+Drops ASCII section banners into your code that you can spot in the minimap — so
+you find a section by its shape instead of scrolling around hunting for it.
+There's more on the idea in the [main README](../../README.md).
+
+Under the hood it just shells out to the `bigmark` CLI and inserts the result at
+your cursor. Works in VS Code, VSCodium, and other Code OSS builds (stable API
+only).
 
 ## Prerequisites
 
