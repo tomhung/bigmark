@@ -96,6 +96,12 @@ vstretch=1
 **Precedence: built-in defaults → config → command-line flags.** A flag always
 overrides config. Run `bigmark --config` to see which file is being read.
 
+## VS Code extension
+
+A small extension under [`editors/vscode/`](editors/vscode/) inserts banners at
+the cursor, commented for the active file's language. See its README to build
+and install it.
+
 ## Notes & limitations
 
 - Canvas art only reads in the minimap when VS Code's
