@@ -16,7 +16,7 @@ can jump to.
 Download a binary from [Releases](../../releases), or build from source:
 
 ```sh
-go install github.com/greg/bigmark/cmd/bigmark@latest
+go install github.com/GravisTechGregB/bigmark/cmd/bigmark@latest
 # or
 git clone … && cd bigmark && go build -o bigmark ./cmd/bigmark
 ```

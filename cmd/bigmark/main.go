@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/greg/bigmark/internal/render"
+	"github.com/GravisTechGregB/bigmark/internal/render"
 )
 
 const fullBlock = "█" // █

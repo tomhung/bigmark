@@ -14,7 +14,7 @@ docs/DESIGN.md          design rationale (shared with the PHP repo)
 docs/bigmark.php.reference   the original PHP, kept for diffing during the port
 ```
 
-Module path: `github.com/greg/bigmark`.
+Module path: `github.com/GravisTechGregB/bigmark`.
 
 ## Parity with the PHP version
 
