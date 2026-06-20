@@ -1,0 +1,389 @@
+#!/usr/bin/env php
+<?php
+// bigmark — generate section banner comments sized to a max line length,
+// designed to be recognizable landmarks in the editor minimap.
+//
+// THREE TIERS (visual weight = section importance):
+//   (default / -1)  full-width framed figlet  -> major movements
+//   -2              one-line box               -> sections
+//   -3              lightweight tick           -> subsections
+//
+// USAGE
+//   bigmark "parse" "raw bytes -> tokens"        # tier 1, big framed figlet
+//   bigmark -2 "validate" "reject bad tokens"    # tier 2, boxed
+//   bigmark -3 "normalize whitespace"            # tier 3, tick
+//   bigmark -r "parse"                           # ROTATED 90: reads top-to-bottom
+//   bigmark --canvas "parse"                     # CARVE word into a filled field
+//   bigmark --canvas --rand "parse"              # random brush/font/style + replay line
+//   bigmark --frand "parse"                      # random font, any mode
+//
+// OPTIONS
+//   --rand      canvas mode: randomize brush, font (bold-only), vstretch, and
+//               carve/solid from a random seed. Prints an exact-replay command
+//               above the art. Knobs you set explicitly are kept, not rerolled.
+//   --frand     randomize the FONT only, from the FULL font pool (incl. thin
+//               ones). Works in ANY mode and does NOT enable canvas by itself.
+//   --seed N    replay a specific render. Same seed -> identical output. The
+//               replay command printed by --rand/--frand uses this.
+//   -r          rotated mode: figlet turned 90deg clockwise so the word runs
+//               DOWN the file (a tall vertical landmark in the minimap). Forces
+//               the 'banner' font, the only stock font that stays legible
+//               rotated (diagonal-stroke fonts turn to mush). -ccw for the
+//               other direction.
+//   -ccw        rotated counter-clockwise (with -r)
+//   --canvas    canvas mode: render the word as a SHAPE in a filled field so it
+//               reads in the minimap (the minimap is the viewing distance). By
+//               default the word is CARVED as negative space out of the fill.
+//   --solid     canvas mode: fill the word itself instead of carving it (positive)
+//   --brush C   fill character for canvas mode (default U+2588 full block).
+//               good picks: solid block, #, @, M. (see --brushes)
+//   --brushes   print the brush-density ramp (lightest->darkest) and exit
+//   --vstretch N   repeat each canvas row N times to counter the minimap's
+//               vertical squish (default 2; use 1 to disable)
+//   -w N        max line width (default 80), e.g. -w 100
+//   -c "PFX "   comment prefix (default "# "), e.g. -c "// "  -c "-- "
+//   -f FONT     figlet font. Tier 1: any font. Canvas: any font works, but
+//               only bold ones (banner, block) carve legibly; thin/diagonal
+//               fonts (standard, big, slant, script...) come out as mush.
+//               --rand only rolls the bold ones; use -f to force a thin one.
+//   --lang L    wrap canvas mode in the comment syntax for language L:
+//               js|ts (/* */), php (/* */), css (/* */), html (<!-- -->),
+//               python|py ("""..."""), ruby|rb (=begin/=end).
+//               Default js. Affects --canvas only.
+//   --header    print a one-line definition of the convention and exit
+//   -h          this help
+//
+// Notes: tier 1 never emits a line longer than the max width; if a word is
+// too wide it auto-drops to a smaller figlet font, then errors rather than
+// overflow. ASCII-only frame chars so widths are exact (no multibyte miscount).
+
+$args   = array_slice($argv, 1);
+$tier   = 1;
+$width  = 80;
+$prefix = '# ';
+$font   = null;
+$rotate = false;       // false | 'cw' | 'ccw'
+$canvas = false;       // canvas mode
+$carve  = true;        // true = word is negative space; false = word is filled
+$cfont  = 'banner';    // canvas mask font (carve-safe set only)
+$setCfont = false;     // did user pin the canvas font?
+$brush  = "\u{2588}";  // full block by default
+$vstretch = 2;         // repeat each row N times (counter minimap squish)
+$lang   = 'js';        // canvas comment syntax
+$seed   = null;        // deterministic render seed (canvas mode)
+$rand   = false;       // pick a seed at random, then derive settings from it
+$frand  = false;       // randomize FONT from the full (wild) pool, not bold-only
+// track which canvas knobs the user set explicitly, so --rand only randomizes
+// the ones they DIDN'T pin:
+$setBrush = false; $setVstretch = false; $setCarve = false;
+
+// ---- parse flags ----
+$pos = [];
+for ($i = 0; $i < count($args); $i++) {
+    $a = $args[$i];
+    switch (true) {
+        case $a === '-h' || $a === '--help': print_help(); exit(0);
+        case $a === '--header':
+            // print the self-documenting convention line and exit
+            global $prefix;
+            echo $prefix . "bigmark: full-width figlet banner comments used as minimap landmarks.\n";
+            echo $prefix . "         major sections get one; navigate by silhouette.\n";
+            exit(0);
+        case $a === '-1': $tier = 1; break;
+        case $a === '-2': $tier = 2; break;
+        case $a === '-3': $tier = 3; break;
+        case $a === '-r': $rotate = $rotate ?: 'cw'; break;
+        case $a === '-ccw': $rotate = 'ccw'; break;
+        case $a === '--canvas': $canvas = true; break;
+        case $a === '--solid': $canvas = true; $carve = false; $setCarve = true; break;
+        case $a === '--brush': $brush = $args[++$i] ?? "\u{2588}"; $setBrush = true; break;
+        case $a === '--brushes': print_brushes(); exit(0);
+        case $a === '--vstretch': $vstretch = max(1, (int)($args[++$i] ?? 2)); $setVstretch = true; break;
+        case $a === '--lang': $lang = strtolower($args[++$i] ?? 'js'); break;
+        // --seed sets the seed but does NOT force a mode; the mode comes from
+        // --canvas/--solid (canvas) or its absence (tier-1). This lets a tier-1
+        // reproduce line replay as tier-1, and a canvas one as canvas.
+        case $a === '--seed': $seed = (int)($args[++$i] ?? 0); break;
+        case $a === '--rand' || $a === '-rand': $rand = true; $canvas = true; break;
+        // --frand: randomize the font from the FULL pool. Does NOT enable canvas
+        // on its own - you must pass --canvas explicitly.
+        case $a === '--frand' || $a === '-frand': $frand = true; break;
+        case $a === '-w': $width = (int)($args[++$i] ?? 80); break;
+        case $a === '-c': $prefix = $args[++$i] ?? '# '; break;
+        case $a === '-f': $font = $args[++$i] ?? null; $cfont = $font ?: 'banner'; $setCfont = true; break;
+        default:
+            // reject unknown flags instead of silently rendering them as text
+            if (str_starts_with($a, '-')) {
+                fwrite(STDERR, "unknown option '$a' (try: bigmark -h)\n");
+                exit(2);
+            }
+            $pos[] = $a;
+    }
+}
+
+$label = strtoupper($pos[0] ?? 'SECTION');
+$note  = $pos[1] ?? '';
+
+// ---- seed / random: derive canvas settings deterministically ----
+// --rand picks a seed; --seed N replays one. All randomized knobs come from
+// mt_rand() seeded by $seed, so the same seed always reproduces the same art.
+// Knobs the user set explicitly are respected and NOT overridden.
+// --frand only randomizes the FONT, from the full (wild) pool, and unlike
+// --rand it does NOT enable canvas mode on its own.
+if (($rand || $frand) && $seed === null) {
+    $seed = random_int(1000, 9999);          // human-friendly 4-digit seed
+}
+if ($seed !== null) {
+    mt_srand($seed);
+    $brushPool = ["\u{2588}", "\u{2593}", "\u{2592}", '#', '@', 'M', 'W', '8'];
+    // --rand pool: ONLY fonts that stay legible carved (bold-only).
+    $boldPool  = ['banner', 'block'];
+    // --frand pool: every carve-capable font, including thin/wild ones.
+    $wildPool  = ['banner','block','standard','big','small','slant','smslant',
+                  'shadow','smshadow','lean','script','smscript'];
+    if ($rand && !$setBrush)    $brush    = $brushPool[mt_rand(0, count($brushPool) - 1)];
+    if ($rand && !$setVstretch) $vstretch = mt_rand(1, 3);
+    if ($rand && !$setCarve)    $carve    = mt_rand(0, 1) === 1;
+    // font: --frand uses the wild pool (takes precedence); --rand uses bold-only.
+    if (!$setCfont) {
+        if ($frand)     $cfont = $wildPool[mt_rand(0, count($wildPool) - 1)];
+        elseif ($rand)  $cfont = $boldPool[mt_rand(0, count($boldPool) - 1)];
+    }
+    // --frand also randomizes the TIER-1 banner font (any font is fine there).
+    if ($frand && $font === null) {
+        $tier1Pool = ['standard','big','small','slant','shadow','banner','block',
+                      'lean','script','smslant','smshadow','smscript'];
+        $font = $tier1Pool[mt_rand(0, count($tier1Pool) - 1)];
+    }
+}
+
+if ($canvas)     { canvas($label, $width, $brush, $carve, $vstretch, $lang, $seed, $cfont); exit(0); }
+if ($rotate)      { rotated($label, $prefix, $rotate, $width); exit(0); }
+if ($tier === 3) { tier3($label, $note, $prefix); exit(0); }
+if ($tier === 2) { tier2($label, $note, $prefix, $width); exit(0); }
+// tier-1: if a random flag picked the font, record an exact-replay line so the
+// roll is reproducible (normal tier-1 stays clean - no line emitted).
+if (($frand || $rand) && $seed !== null && $font !== null) {
+    echo $prefix . 'bigmark --seed ' . $seed . ' -f ' . $font
+       . ' -w ' . $width . ' ' . escapeshellarg($label)
+       . ($note !== '' ? ' ' . escapeshellarg($note) : '') . "\n";
+}
+tier1($label, $note, $prefix, $width, $font);
+exit(0);
+
+// ===========================================================================
+function print_help(): void {
+    $f = fopen(__FILE__, 'r');
+    $started = false;
+    while (($l = fgets($f)) !== false) {
+        if (str_starts_with($l, '#!')) continue;      // skip shebang
+        if (str_starts_with($l, '<?php')) continue;   // skip php open tag
+        if (str_starts_with($l, '//')) { $started = true; echo substr($l, 3); continue; }
+        if ($started) break;                          // first non-comment after the block ends help
+    }
+    fclose($f);
+}
+
+// ---- tier 3: lightweight tick ----
+function tier3(string $label, string $note, string $p): void {
+    $text = strtolower(trim($label . ' ' . $note));
+    echo $p . "--> " . $text . "\n";
+}
+
+// ---- tier 2: one-line ASCII box, padded to width ----
+function tier2(string $label, string $note, string $p, int $max): void {
+    $text = $note === '' ? $label : "$label - $note";
+    $inner = $max - strlen($p) - 4;            // "| " + " |"
+    if ($inner < strlen($text)) $text = substr($text, 0, $inner);
+    $barw = $max - strlen($p) - 2;
+    $bar  = $p . '+' . str_repeat('=', $barw) . '+';
+    $mid  = $p . '| ' . str_pad($text, $inner) . ' |';
+    echo "$bar\n$mid\n$bar\n";
+}
+
+// ---- tier 1: centered figlet inside a full-width frame ----
+function tier1(string $word, string $note, string $p, int $max, ?string $font): void {
+    $plen  = strlen($p);
+    $inner = $max - $plen - 4;
+    if ($inner < 10) { fwrite(STDERR, "width $max too small for a frame\n"); exit(1); }
+
+    $fonts = $font ? [$font] : ['standard', 'small', 'mini'];
+    $art = null; $used = null;
+    foreach ($fonts as $f) {
+        $a = figlet_fit($word, $f, $inner);
+        if ($a !== null) { $art = $a; $used = $f; break; }
+    }
+    if ($art === null) {
+        fwrite(STDERR, "'$word' won't fit in width $max even at smallest font.\n");
+        exit(1);
+    }
+
+    $barw = $max - $plen - 2;
+    $bar  = $p . '+' . str_repeat('=', $barw) . '+';
+
+    $emit = function(string $line) use ($p, $inner) {
+        $pad = max(0, $inner - strlen($line));
+        $l = intdiv($pad, 2); $r = $pad - $l;
+        echo $p . '| ' . str_repeat(' ', $l) . $line . str_repeat(' ', $r) . ' |' . "\n";
+    };
+
+    echo "$bar\n";
+    $emit('');                               // top padding (balances the frame)
+    foreach ($art as $line) $emit($line);
+    if ($note !== '') {
+        $emit('');
+        if (strlen($note) > $inner) $note = substr($note, 0, $inner - 1) . '.';
+        $emit($note);
+    } else {
+        $emit('');                           // bottom padding when there's no note
+    }
+    echo "$bar\n";
+}
+
+// ---- rotated: figlet 'banner' font turned 90deg, reads top-to-bottom ----
+// 'banner' is the only stock font with no diagonal strokes, so it stays
+// legible when rotated. Other fonts turn to mush.
+function rotated(string $word, string $p, string $dir, int $max): void {
+    $raw = shell_exec('figlet -f banner ' . escapeshellarg($word) . ' 2>/dev/null');
+    if ($raw === null || trim($raw) === '') {
+        fwrite(STDERR, "figlet 'banner' font not available\n"); exit(1);
+    }
+    $rows = array_values(array_filter(
+        explode("\n", rtrim($raw, "\n")), fn($r) => trim($r) !== ''));
+    $w = max(array_map('strlen', $rows));
+    $rows = array_map(fn($r) => str_pad($r, $w), $rows);
+    $h = count($rows);
+    $grid = array_map('str_split', $rows);
+
+    $out = [];
+    if ($dir === 'cw') {
+        // clockwise: column x, bottom-to-top -> reads top-to-bottom P..E
+        for ($x = 0; $x < $w; $x++) {
+            $line = '';
+            for ($y = $h - 1; $y >= 0; $y--) $line .= $grid[$y][$x];
+            $out[] = $line;
+        }
+    } else {
+        // counter-clockwise
+        for ($x = $w - 1; $x >= 0; $x--) {
+            $line = '';
+            for ($y = 0; $y < $h; $y++) $line .= $grid[$y][$x];
+            $out[] = $line;
+        }
+    }
+    // center the rotated block: every line is $h chars wide (= original art
+    // height). Pad all lines by the SAME left margin so the column stays a
+    // block, centered within the usable width ($max minus the comment prefix).
+    $avail = $max - strlen($p);
+    $left  = max(0, intdiv($avail - $h, 2));
+    $pad   = str_repeat(' ', $left);
+    foreach ($out as $line) echo $p . rtrim($pad . $line) . "\n";
+}
+
+// ---- canvas: carve (or fill) a word as a shape in a filled field ----
+// The whole block is one /* */ comment so no per-line '#' pollutes the picture.
+// Designed to be read in the MINIMAP, not up close.
+function canvas(string $word, int $max, string $brush, bool $carve, int $vstretch, string $lang, ?int $seed, string $cfont): void {
+    // interior width; +2 border brushes -> every emitted row is exactly $max
+    // chars (display columns; brush assumed 1 column wide).
+    $W = $max - 2;
+    if ($W < 10) { fwrite(STDERR, "width too small for canvas\n"); exit(1); }
+
+    // comment delimiters per language: [open, close]. open/close go on their
+    // own lines so the art field between them is pure brush ink.
+    $delims = [
+        'js'=>['/*','*/'], 'ts'=>['/*','*/'], 'php'=>['/*','*/'], 'css'=>['/*','*/'],
+        'html'=>['<!--','-->'],
+        'python'=>['"""','"""'], 'py'=>['"""','"""'],
+        'ruby'=>['=begin','=end'], 'rb'=>['=begin','=end'],
+    ];
+    if (!isset($delims[$lang])) {
+        fwrite(STDERR, "unknown --lang '$lang' (js|ts|php|css|html|python|ruby)\n"); exit(1);
+    }
+    [$open, $close] = $delims[$lang];
+
+    // line-comment prefix per language, for the reproduce line above the art.
+    // (css/html have no line comment -> wrap the reproduce line in the block form.)
+    $linecmt = ['js'=>'// ','ts'=>'// ','php'=>'// ','python'=>'# ','py'=>'# ',
+                'ruby'=>'# ','rb'=>'# ','css'=>null,'html'=>null];
+
+    // ---- reproduce line: the exact command that regenerates THIS art ----
+    // Always pin via --seed (never --rand), so re-running reproduces byte-for-byte.
+    if ($seed !== null) {
+        $cmd = 'bigmark --canvas --seed ' . $seed . ' --lang ' . $lang
+             . ' -f ' . $cfont
+             . ' --brush ' . escapeshellarg($brush)
+             . ' --vstretch ' . $vstretch
+             . ($carve ? '' : ' --solid')
+             . ' -w ' . $max . ' ' . escapeshellarg($word);
+        $lc = $linecmt[$lang];
+        if ($lc !== null) echo $lc . $cmd . "\n";
+        else              echo $open . ' ' . $cmd . ' ' . $close . "\n";
+    }
+
+    // carve-safe font (banner/block): solid letterforms that survive masking
+    $raw = shell_exec('figlet -f ' . escapeshellarg($cfont) . ' -w ' . (int)($W) . ' ' . escapeshellarg($word) . ' 2>/dev/null');
+    if ($raw === null || trim($raw) === '') {
+        fwrite(STDERR, "figlet font '$cfont' not available\n"); exit(1);
+    }
+    $rows = array_values(array_filter(explode("\n", rtrim($raw, "\n")), fn($r)=>trim($r)!==''));
+    $gw = max(array_map('strlen', $rows));
+    if ($gw > $W) {                      // too wide: trim mask to fit
+        $rows = array_map(fn($r)=>substr(str_pad($r,$gw),0,$W), $rows);
+        $gw = $W;
+    }
+    $gh = count($rows);
+    $padL = max(0, intdiv($W - $gw, 2));
+
+    // pad mask to full canvas width, centered, with a blank margin top/bottom
+    $blank = str_repeat(' ', $W);
+    $mask = [$blank, $blank];
+    foreach ($rows as $r) {
+        $r = str_pad($r, $gw);
+        $mask[] = str_repeat(' ', $padL) . $r . str_repeat(' ', $W - $padL - $gw);
+    }
+    $mask[] = $blank; $mask[] = $blank;
+
+    // emit as a single block comment. ink = brush, hole = space.
+    // carve  : background filled, word punched out (negative space)
+    // solid  : background empty, word filled
+    // open/close delimiters sit on their own lines; the rows between are pure
+    // art. (Ruby's =begin/=end must be at column 0 - they already are.)
+    echo $open . "\n";
+    echo str_repeat($brush, $W + 2) . "\n";        // top brush rule
+    foreach ($mask as $line) {
+        $out = '';
+        for ($x = 0; $x < $W; $x++) {
+            $ink = ($line[$x] ?? ' ') !== ' ';      // mask has a glyph pixel here?
+            $paint = $carve ? !$ink : $ink;         // carve inverts
+            $out .= $paint ? $brush : ' ';
+        }
+        $row = $brush . $out . $brush;
+        for ($v = 0; $v < $vstretch; $v++) echo $row . "\n";
+    }
+    echo str_repeat($brush, $W + 2) . "\n";        // bottom brush rule
+    echo $close . "\n";
+}
+
+// ---- brush-density ramp reference ----
+function print_brushes(): void {
+    echo "Brush density ramp (lightest -> darkest), pick a --brush:\n\n";
+    echo "  ASCII 10-step :  .:-=+*#%@\n";
+    echo "  Unicode shade :  \u{2591}\u{2592}\u{2593}\u{2588}   (light, medium, dark, full block)\n";
+    echo "  half blocks   :  \u{2580}\u{2584}\u{258C}\u{2590}   (top, bottom, left, right - sub-line detail)\n";
+    echo "  fat ASCII fill:  # @ M W & 8 0\n\n";
+    echo "Minimap tip: solid area-fill reads best. Default brush is the full\n";
+    echo "block \u{2588}. Diagonal/line chars (/ \\ | _) do NOT fill area - avoid for canvas.\n";
+}
+
+function figlet_fit(string $word, string $font, int $cap): ?array {
+    $raw = shell_exec('figlet -f ' . escapeshellarg($font) .
+                      ' -w ' . (int)$cap . ' ' . escapeshellarg($word) . ' 2>/dev/null');
+    if ($raw === null || trim($raw) === '') return null;
+    $lines = explode("\n", rtrim($raw, "\n"));
+    while ($lines && trim($lines[0]) === '')   array_shift($lines);
+    while ($lines && trim(end($lines)) === '') array_pop($lines);
+    if (!$lines) return null;
+    $w = max(array_map('strlen', $lines));
+    return $w <= $cap ? $lines : null;
+}

@@ -1,0 +1,7 @@
+# built binary
+/bigmark
+# dist artifacts
+/dist/
+*.log
+.DS_Store
+*.swp
