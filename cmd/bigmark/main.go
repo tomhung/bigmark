@@ -204,6 +204,10 @@ func main() {
 		}
 	}
 
+	// every render mode needs figlet — verify it up front with a clear message
+	// (help/header/config/brushes already returned above and don't need it).
+	render.CheckFiglet()
+
 	// ---- dispatch ----
 	switch {
 	case canvas:

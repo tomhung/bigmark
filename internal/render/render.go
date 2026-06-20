@@ -43,14 +43,22 @@ func Tier1(word, note, prefix string, max int, font string) {
 		fonts = []string{font}
 	}
 	var art []string
+	var lastErr error
 	for _, f := range fonts {
-		if a, ok := figletFit(word, f, inner); ok {
+		a, ok, err := figletFit(word, f, inner)
+		if ok {
 			art = a
 			break
 		}
+		if err != nil {
+			lastErr = err // figlet broke, not just overflow
+		}
 	}
 	if art == nil {
-		die("%q won't fit in width %d even at smallest font.", word, max)
+		if lastErr != nil {
+			die("could not render with figlet: %v", lastErr)
+		}
+		die("%q won't fit in width %d even at the smallest font (try a shorter word or wider -w).", word, max)
 	}
 
 	barw := max - plen - 2
