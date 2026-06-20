@@ -7,16 +7,44 @@ import (
 	"strings"
 )
 
+// commonFigletPaths are checked when figlet isn't on PATH — covers the case
+// where the environment (e.g. VS Code's integrated terminal) has a stripped
+// PATH that's missing /usr/bin. Override with $BIGMARK_FIGLET.
+var commonFigletPaths = []string{
+	"/usr/bin/figlet",
+	"/usr/local/bin/figlet",
+	"/opt/homebrew/bin/figlet", // macOS arm64 homebrew
+	"/bin/figlet",
+}
+
+// figletPath resolves the figlet executable: $BIGMARK_FIGLET first, then PATH,
+// then known install locations. Returns "" if none is runnable.
+func figletPath() string {
+	if p := os.Getenv("BIGMARK_FIGLET"); p != "" {
+		return p
+	}
+	if p, err := exec.LookPath("figlet"); err == nil {
+		return p
+	}
+	for _, p := range commonFigletPaths {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p
+		}
+	}
+	return ""
+}
+
 // CheckFiglet verifies the figlet binary is present and runnable, exiting with
 // a clear, actionable message if not. Call once at startup so a missing/broken
 // figlet fails loudly instead of surfacing as a confusing "won't fit" later.
 func CheckFiglet() {
-	path, err := exec.LookPath("figlet")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "bigmark: required dependency 'figlet' was not found on your PATH.")
+	path := figletPath()
+	if path == "" {
+		fmt.Fprintln(os.Stderr, "bigmark: required dependency 'figlet' was not found.")
+		fmt.Fprintln(os.Stderr, "  Looked on PATH and in: "+strings.Join(commonFigletPaths, ", "))
 		fmt.Fprintln(os.Stderr, "  install it:  sudo apt install figlet   (Debian/Ubuntu)")
 		fmt.Fprintln(os.Stderr, "               brew install figlet       (macOS)")
-		fmt.Fprintln(os.Stderr, "  then re-run. (current PATH does not contain a 'figlet' binary)")
+		fmt.Fprintln(os.Stderr, "  or point bigmark at it:  export BIGMARK_FIGLET=/path/to/figlet")
 		os.Exit(127) // 127 = command not found, conventional
 	}
 	// present but does it actually run? (broken install, bad perms, etc.)
@@ -34,17 +62,17 @@ func CheckFiglet() {
 // the rendered rows with leading/trailing blank lines stripped. width<=0 means
 // no -w cap.
 func figlet(word, font string, width int) ([]string, error) {
+	bin := figletPath()
+	if bin == "" {
+		return nil, fmt.Errorf("figlet not found (install it, or set BIGMARK_FIGLET)")
+	}
 	args := []string{"-f", font}
 	if width > 0 {
 		args = append(args, "-w", fmt.Sprintf("%d", width))
 	}
 	args = append(args, word)
-	out, err := exec.Command("figlet", args...).Output()
+	out, err := exec.Command(bin, args...).Output()
 	if err != nil {
-		// distinguish "figlet itself is gone" from "this font is missing"
-		if _, lookErr := exec.LookPath("figlet"); lookErr != nil {
-			return nil, fmt.Errorf("figlet not found on PATH (install it: sudo apt install figlet)")
-		}
 		return nil, fmt.Errorf("figlet font %q not available: %w", font, err)
 	}
 	raw := strings.TrimRight(string(out), "\n")
