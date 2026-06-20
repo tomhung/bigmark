@@ -1,0 +1,89 @@
+{
+  "name": "bigmark",
+  "displayName": "bigmark",
+  "description": "Insert ASCII section-banner comments (minimap landmarks) using the bigmark CLI.",
+  "version": "0.1.0",
+  "publisher": "gravistech",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GravisTechGregB/bigmark.git",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bigmark.insert",
+        "title": "bigmark: Insert banner"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "bigmark.insert",
+        "key": "ctrl+k ctrl+b",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "bigmark",
+      "properties": {
+        "bigmark.binaryPath": {
+          "type": "string",
+          "default": "bigmark",
+          "description": "Path to the bigmark executable. Use a bare name to resolve on PATH, or an absolute path."
+        },
+        "bigmark.mode": {
+          "type": "string",
+          "enum": [
+            "tier1",
+            "tier2",
+            "tier3",
+            "rotated",
+            "canvas"
+          ],
+          "enumDescriptions": [
+            "Full-width framed figlet banner (major sections).",
+            "One-line box (sections).",
+            "Lightweight tick (subsections).",
+            "Rotated 90deg: the word runs down the file.",
+            "Canvas: the word carved/filled into a block field for the minimap."
+          ],
+          "default": "tier1",
+          "description": "Which bigmark render mode to use."
+        },
+        "bigmark.width": {
+          "type": "number",
+          "default": 80,
+          "description": "Max line width passed to bigmark (-w)."
+        },
+        "bigmark.commentPrefix": {
+          "type": "string",
+          "default": "",
+          "description": "Comment prefix for non-canvas modes (-c). Leave empty to auto-derive from the active file's language. Include a trailing space, e.g. \"// \"."
+        },
+        "bigmark.figletPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the figlet binary. Passed to bigmark as BIGMARK_FIGLET. Leave empty to let bigmark find figlet on PATH / common locations."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.x",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.4.0"
+  }
+}
